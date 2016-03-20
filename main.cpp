@@ -29,6 +29,7 @@ static const char *INTERACTIVE_MESSAGE = (char *) "Press 'i' for interactive mod
 bool shouldLoop = true;
 CURSOR_COORDS coords;
 WINDOW *window;
+WINDOW *messageWindow;
 short speedLeft = MOTOR_IDLE, speedRight = MOTOR_IDLE;
 
 #pragma mark - Prototypes
@@ -94,15 +95,21 @@ void destroyWindow() {
     endwin();
 }
 
+//TODO: This needs a major refactor. I was in a rush
 void pollArrowInput() {
 
     keypad(stdscr, TRUE);
+    wclear(messageWindow);
 
     int x, y, width, height;
     getmaxyx(window, y, x);
+    wrefresh(messageWindow);
+    wrefresh(window);
+
     width = 40;
     height = 10;
     setColors();
+    refresh();
     WINDOW *temp = newwin(height, width, y/2 + 2, (x/2) - width/2 + 5);
 
     box(temp, '#', '*');
@@ -113,14 +120,17 @@ void pollArrowInput() {
     while (shouldLoop) {
         MotorSpeed speed = calculateMotorSpeed(shouldLoop);
 
+        setColors();
         refresh();
 
         int marginLeft = 3;
         int marginTop = 3;
 
+        char * speedLeftStr = (char *) "Speed Left: %i";
+
         attron(COLOR_PAIR(1));
-        mvwprintw(temp, marginTop, marginLeft,  "Speed Left: %i", speed.left);
-        mvwprintw(temp, marginTop + 2, marginLeft,  "Speed Right: %i", speed.right);
+        mvwprintw(temp, marginTop, marginLeft + 8,  speedLeftStr, speed.left);
+        mvwprintw(temp, marginTop + 2, marginLeft + 8,  "Speed Right: %i", speed.right);
 
         refresh();
         attroff(COLOR_PAIR(1));
@@ -132,8 +142,10 @@ void pollArrowInput() {
         refresh();
         wrefresh(temp);
     }
+    setColors();
 }
 
+//TODO: This needs a major refactor. I was in a rush
 void initScreen() {
 
     initscr();
@@ -158,7 +170,7 @@ void initScreen() {
 
     box(window, '#', '*');
 
-    wborder(titleWin, '#', '#', '*', '-', '*', '*', '+', '+');
+    wborder(titleWin, '#', '#', '*', '*', '*', '*', ACS_LLCORNER, ACS_LRCORNER);
 
     getmaxyx(titleWin, y, x);
 
@@ -166,11 +178,22 @@ void initScreen() {
 
     getmaxyx(window, y, x);
     move((y / 2) + 7, x / 2 + 4);
-    mvwprintw(window, y / 2, x / 2 - ((int) strlen(INTERACTIVE_MESSAGE) / 2), "%s", INTERACTIVE_MESSAGE);
+
+    int w = (int) strlen(INTERACTIVE_MESSAGE);
+    int messagePadding = 6;
+
+    messageWindow = newwin(5, w + messagePadding, (y / 2) + 4, (x / 2) - (w/2) + 1);
+    box(messageWindow, '#', '*');
+
+    getmaxyx(messageWindow, y, x);
+    mvwprintw(messageWindow,y/2, (x/2) - (w/2), "%s", INTERACTIVE_MESSAGE);
+
+    refresh();
 
     wrefresh(stdscr);
     wrefresh(window);
     wrefresh(titleWin);
+    wrefresh(messageWindow);
     refresh();
 
     setColors();
