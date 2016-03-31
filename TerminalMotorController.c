@@ -2,8 +2,8 @@
  * Created by Robby Chapman on 3/19/16.
  */
 
+#include "TerminalMotorController.h"
 #include <ncurses.h>
-#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -14,64 +14,53 @@ typedef struct {
 typedef struct {
     short row;
     short col;
-} CURSOR_COORDS;
+} CURSOR_COORDINATES;
 
-#pragma mark - Constants //259
-static const bool DEBUG = true;
-static const int QUIT_KEY = 113;
-static const int INTERACTIVE_KEY = 105;
-static const int MOTOR_MAX = 3200;
-static const int MOTOR_IDLE = MOTOR_MAX / 2;
-static const char *HEADER_TITLE = (char *) "Motor Controller";
-static const char *INTERACTIVE_MESSAGE = (char *) "Press 'i' for interactive mode, 'q' to quit";
+#pragma mark - Constants
+static const uint8_t QUIT_KEY = 113;
+static const uint8_t INTERACTIVE_KEY = 105;
+static const uint16_t MOTOR_MAX = 3200;
+static const int16_t MOTOR_MIN = -MOTOR_MAX;
+static const uint8_t NORMALIZED_MAX = 10;
+static const int8_t NORMALIZED_MIN = -NORMALIZED_MAX;
+static const int16_t NORMALIZED_DELTA = (const __int16_t) ((NORMALIZED_MIN * -1) + MOTOR_MAX) / (NORMALIZED_MIN * -1) + NORMALIZED_MAX;
+static const int16_t MOTOR_IDLE = MOTOR_MAX / 2;
+static const char * HEADER_TITLE = (char *) "Motor Controller";
+static const char * INTERACTIVE_MESSAGE = (char *) "Press 'i' for interactive mode, 'q' to quit";
 
 #pragma mark - Instance
 bool shouldLoop = true;
-CURSOR_COORDS coords;
+CURSOR_COORDINATES coordinates;
 WINDOW *window;
 WINDOW *messageWindow;
-short speedLeft = MOTOR_IDLE, speedRight = MOTOR_IDLE;
+int16_t speedLeft = (int16_t) MOTOR_IDLE, speedRight = (__uint16_t) MOTOR_IDLE;
 
 #pragma mark - Prototypes
 
 void turnLeft();
-
 void turnRight();
-
 void increaseSpeed();
-
 void decreaseSpeed();
-
 void validateTerminal();
-
 void initScreen();
-
 void setColors();
-
 void pollArrowInput();
-
 void destroyWindow();
-
-MotorSpeed calculateMotorSpeed(bool &);
-
+MotorSpeed calculateMotorSpeed(bool);
 bool checkInteractiveMode();
+int8_t normalizeMotorSpeed(int16_t);
 
-short run();
-
-#pragma mark - Main
-
-int main(int argc, char *argv[]) {
-
-    return run();
-}
-
-short run() {
+void initMotorCtrl() {
 
     initScreen();
     if (checkInteractiveMode()) pollArrowInput();
     destroyWindow();
+}
 
-    return 0;
+int8_t normalizeMotorSpeed(int16_t x) {
+
+    /* a + (x-A)*(b-a)/(B-A) */
+    return (int8_t) (NORMALIZED_MIN + (x - MOTOR_MIN) * (NORMALIZED_MAX - NORMALIZED_MIN) / (MOTOR_MAX - MOTOR_MIN));
 }
 
 bool checkInteractiveMode() {
@@ -110,7 +99,7 @@ void pollArrowInput() {
     height = 10;
     setColors();
     refresh();
-    WINDOW *temp = newwin(height, width, y/2 + 2, (x/2) - width/2 + 5);
+    WINDOW *temp = newwin(height, width, y / 2 + 2, (x / 2) - width / 2 + 5);
 
     box(temp, '#', '*');
     setColors();
@@ -119,18 +108,18 @@ void pollArrowInput() {
 
     while (shouldLoop) {
         MotorSpeed speed = calculateMotorSpeed(shouldLoop);
-
+        //printf("Speed is %i", normalizeMotorSpeed(speed.left)); <-- Debug
         setColors();
         refresh();
 
         int marginLeft = 3;
         int marginTop = 3;
 
-        char * speedLeftStr = (char *) "Speed Left: %i";
+        char *speedLeftStr = (char *) "Speed Left: %i";
 
         attron(COLOR_PAIR(1));
-        mvwprintw(temp, marginTop, marginLeft + 8,  speedLeftStr, speed.left);
-        mvwprintw(temp, marginTop + 2, marginLeft + 8,  "Speed Right: %i", speed.right);
+        mvwprintw(temp, marginTop, marginLeft + 8, speedLeftStr, speed.left);
+        mvwprintw(temp, marginTop + 2, marginLeft + 8, "Speed Right: %i", speed.right);
 
         refresh();
         attroff(COLOR_PAIR(1));
@@ -150,9 +139,11 @@ void initScreen() {
 
     initscr();
     cbreak();
+    noecho();
+    nodelay(window, true);
     validateTerminal();
 
-    getmaxyx(stdscr, coords.row, coords.col);
+    getmaxyx(stdscr, coordinates.row, coordinates.col);
 
     int x, y, margin, headerHeight, headerWidth;
     margin = 5;
@@ -182,11 +173,11 @@ void initScreen() {
     int w = (int) strlen(INTERACTIVE_MESSAGE);
     int messagePadding = 6;
 
-    messageWindow = newwin(5, w + messagePadding, (y / 2) + 4, (x / 2) - (w/2) + 1);
+    messageWindow = newwin(5, w + messagePadding, (y / 2) + 4, (x / 2) - (w / 2) + 1);
     box(messageWindow, '#', '*');
 
     getmaxyx(messageWindow, y, x);
-    mvwprintw(messageWindow,y/2, (x/2) - (w/2), "%s", INTERACTIVE_MESSAGE);
+    mvwprintw(messageWindow, y / 2, (x / 2) - (w / 2), "%s", INTERACTIVE_MESSAGE);
 
     refresh();
 
@@ -216,9 +207,10 @@ void validateTerminal() {
     }
 }
 
-MotorSpeed calculateMotorSpeed(bool &proceed) {
+MotorSpeed calculateMotorSpeed(bool proceed) {
 
     int directionInput = getch();
+
     switch (directionInput) {
         case KEY_DOWN:
             decreaseSpeed();
@@ -242,26 +234,36 @@ MotorSpeed calculateMotorSpeed(bool &proceed) {
     return (MotorSpeed) {speedLeft, speedRight};
 }
 
+bool isGreaterThanMin(short speed) {
+
+    return speed >= MOTOR_MIN;
+}
+
+bool isLessThanMax(short speed) {
+
+    return speed <= MOTOR_MAX;
+}
+
 void increaseSpeed() {
 
-    ++speedLeft;
-    ++speedRight;
+    if (isLessThanMax(speedLeft)) speedLeft += NORMALIZED_DELTA;
+    if (isLessThanMax(speedRight)) speedRight += NORMALIZED_DELTA;
 }
 
 void decreaseSpeed() {
 
-    --speedLeft;
-    --speedRight;
+    if (isGreaterThanMin(speedLeft)) speedLeft -= NORMALIZED_DELTA;
+    if (isGreaterThanMin(speedRight)) speedRight -= NORMALIZED_DELTA;
 }
 
 void turnLeft() {
 
-    --speedLeft;
-    ++speedRight;
+    if (isGreaterThanMin(speedLeft)) speedLeft -= NORMALIZED_DELTA;
+    if (isLessThanMax(speedRight)) speedRight += NORMALIZED_DELTA;
 }
 
 void turnRight() {
 
-    ++speedLeft;
-    --speedRight;
+    if (isLessThanMax(speedLeft)) speedLeft += NORMALIZED_DELTA;
+    if (isGreaterThanMin(speedRight)) speedRight -= NORMALIZED_DELTA;
 }
